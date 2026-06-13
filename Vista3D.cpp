@@ -25,6 +25,8 @@ Turbina3D::Turbina3D(Qt3DCore::QEntity *parent, int id)
 	const float alturaPoste = cfg.alturaPoste;
 	const float baseY = cfg.posicionPoste.y();
 	
+	m_posicionBase = QVector3D(0,0,0);
+	
 	// Poste
 	auto *torreMesh = new Qt3DExtras::QCylinderMesh();
 	torreMesh->setRadius(cfg.radioPoste);
@@ -38,7 +40,7 @@ Turbina3D::Turbina3D(Qt3DCore::QEntity *parent, int id)
 	this->addComponent(torreMaterial);
 	this->addComponent(torreTransform);
 	
-	// Góndola
+	// GÃ³ndola
 	QVector3D posGondola = cfg.posicionGondola;
 	auto *gondolaMesh = new Qt3DExtras::QCylinderMesh();
 	gondolaMesh->setRadius(cfg.radioGondola);
@@ -93,8 +95,7 @@ Turbina3D::Turbina3D(Qt3DCore::QEntity *parent, int id)
 
 void Turbina3D::actualizarRotacionAspas(double velocidadViento)
 {
-	// Factor aumentado para que el movimiento sea claramente visible
-	const double factor = 3.0;   // Ajusta según necesidad
+	const double factor = 3.0;
 	m_anguloActual += velocidadViento * factor;
 	QQuaternion rotacionViento = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), m_anguloActual);
 	m_rotacionAspas->setRotation(m_rotacionBaseAspas * rotacionViento);
@@ -109,7 +110,6 @@ Vista3D::Vista3D(ParqueEolico *parque, QScreen *screen)
 	setRootEntity(m_rootEntity);
 	crearEscenaBase();
 	
-	// Generar 21 posiciones equiespaciadas en un círculo de radio dado
 	const int numTurbinasMax = 21;
 	const float radioOrbita = Turbina3D::configGlobal.radioOrbitaTurbinas;
 	for (int i = 0; i < numTurbinasMax; ++i) {
@@ -117,15 +117,12 @@ Vista3D::Vista3D(ParqueEolico *parque, QScreen *screen)
 		m_posicionesPrefijadas.append(QVector3D(radioOrbita * cos(angle), 0.0f, radioOrbita * sin(angle)));
 	}
 	
-	// Conectar la señal de actualización del modelo (sincroniza creación/eliminación)
 	connect(m_parque, &ParqueEolico::datosActualizados, this, &Vista3D::actualizarTodasLasTurbinas);
 	
-	// --- TEMPORIZADOR PARA ANIMACIÓN CONTINUA ---
 	m_animTimer = new QTimer(this);
 	connect(m_animTimer, &QTimer::timeout, this, &Vista3D::actualizarAnimacion);
-	m_animTimer->start(50); // 20 FPS
+	m_animTimer->start(50);
 	
-	// Configurar cámara
 	camera()->lens()->setPerspectiveProjection(45.0f, 16.0f/9.0f, 0.1f, 500.0f);
 	camera()->setPosition(QVector3D(30, 18, 30));
 	camera()->setViewCenter(QVector3D(0, 3, 0));
@@ -134,7 +131,10 @@ Vista3D::Vista3D(ParqueEolico *parque, QScreen *screen)
 	
 	this->installEventFilter(this);
 	
-	// Inicializar las turbinas visuales según el estado actual del parque
+	crearArboles();
+	crearCasa();
+	crearCentral();
+	
 	actualizarTodasLasTurbinas();
 }
 
@@ -145,11 +145,9 @@ Vista3D::~Vista3D()
 
 void Vista3D::actualizarAnimacion()
 {
-	// Obtener todas las turbinas reales del modelo
 	const auto &turbinasReales = m_parque->getTurbinas();
 	for (TurbinaEolica *turbinaReal : turbinasReales) {
 		int id = turbinaReal->getId();
-		// Buscar la turbina visual correspondiente
 		if (m_turbinasVisuales.contains(id)) {
 			double velocidad = turbinaReal->getVelocidadViento();
 			m_turbinasVisuales[id]->actualizarRotacionAspas(velocidad);
@@ -211,7 +209,7 @@ void Vista3D::crearEscenaBase()
 	groundEntity->addComponent(groundMaterial);
 	groundEntity->addComponent(planeTransform);
 	
-	// Anillos concéntricos
+	// Anillos concÃ©ntricos
 	const float radii[] = {5.0f, 10.0f, 15.0f, 20.0f};
 	for (float r : radii) {
 		auto *ringMesh = new Qt3DExtras::QCylinderMesh();
@@ -245,7 +243,7 @@ void Vista3D::crearEscenaBase()
 		markerEntity->addComponent(markerTransform);
 	}
 	
-	// Iluminación
+	// IluminaciÃ³n
 	auto *ambientLight = new Qt3DCore::QEntity(m_rootEntity);
 	auto *ambient = new Qt3DRender::QPointLight(ambientLight);
 	ambient->setColor(QColor(100, 100, 110));
@@ -269,6 +267,260 @@ void Vista3D::crearEscenaBase()
 	fillLight->addComponent(lightTransform);
 }
 
+void Vista3D::crearArboles()
+{
+	ConfigArbol cfg;
+	const int numArboles = 40;
+	QVector<QVector3D> posiciones;
+	for (int i = 0; i < numArboles; ++i) {
+		float angle = (i * 27.0f) * M_PI / 180.0f;
+		float radio = 28.0f + (i % 5) * 1.5f;
+		float x = radio * cos(angle);
+		float z = radio * sin(angle);
+		if (i % 3 == 0) {
+			radio = 12.0f + (i % 8);
+			x = radio * cos(angle + 0.7f);
+			z = radio * sin(angle + 0.7f);
+		}
+		posiciones.append(QVector3D(x, 0.0f, z));
+	}
+	
+	for (const QVector3D &pos : posiciones) {
+		auto *grupoArbol = new Qt3DCore::QEntity(m_rootEntity);
+		auto *posTransform = new Qt3DCore::QTransform();
+		posTransform->setTranslation(pos);
+		grupoArbol->addComponent(posTransform);
+		
+		// Tronco
+		auto *troncoMesh = new Qt3DExtras::QCylinderMesh();
+		troncoMesh->setRadius(cfg.radioTronco);
+		troncoMesh->setLength(cfg.alturaTronco);
+		auto *troncoMaterial = new Qt3DExtras::QPhongMaterial();
+		troncoMaterial->setDiffuse(cfg.colorTronco);
+		auto *troncoTransform = new Qt3DCore::QTransform();
+		troncoTransform->setTranslation(QVector3D(0, cfg.alturaTronco/2, 0));
+		auto *troncoEntity = new Qt3DCore::QEntity(grupoArbol);
+		troncoEntity->addComponent(troncoMesh);
+		troncoEntity->addComponent(troncoMaterial);
+		troncoEntity->addComponent(troncoTransform);
+		
+		// Copa
+		auto *copaMesh = new Qt3DExtras::QConeMesh();
+		copaMesh->setTopRadius(0.0f);
+		copaMesh->setBottomRadius(cfg.radioCopa);
+		copaMesh->setLength(cfg.alturaCopa);
+		auto *copaMaterial = new Qt3DExtras::QPhongMaterial();
+		copaMaterial->setDiffuse(cfg.colorCopa);
+		auto *copaTransform = new Qt3DCore::QTransform();
+		copaTransform->setTranslation(QVector3D(0, cfg.alturaTronco + cfg.alturaCopa/2, 0));
+		auto *copaEntity = new Qt3DCore::QEntity(grupoArbol);
+		copaEntity->addComponent(copaMesh);
+		copaEntity->addComponent(copaMaterial);
+		copaEntity->addComponent(copaTransform);
+	}
+}
+
+void Vista3D::crearCasa()
+{
+	ConfigCasa cfg;
+	auto *casaGroup = new Qt3DCore::QEntity(m_rootEntity);
+	auto *posTransform = new Qt3DCore::QTransform();
+	posTransform->setTranslation(cfg.posicion);
+	casaGroup->addComponent(posTransform);
+	
+	// Base
+	auto *baseMesh = new Qt3DExtras::QCuboidMesh();
+	baseMesh->setXExtent(cfg.dimensionBase.x());
+	baseMesh->setYExtent(cfg.dimensionBase.y());
+	baseMesh->setZExtent(cfg.dimensionBase.z());
+	auto *baseMaterial = new Qt3DExtras::QPhongMaterial();
+	baseMaterial->setDiffuse(cfg.colorPared);
+	auto *baseTransform = new Qt3DCore::QTransform();
+	baseTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y()/2, 0));
+	auto *baseEntity = new Qt3DCore::QEntity(casaGroup);
+	baseEntity->addComponent(baseMesh);
+	baseEntity->addComponent(baseMaterial);
+	baseEntity->addComponent(baseTransform);
+	
+	// Techo inferior
+	auto *techoBaseMesh = new Qt3DExtras::QCuboidMesh();
+	techoBaseMesh->setXExtent(cfg.dimensionTecho.x());
+	techoBaseMesh->setYExtent(cfg.dimensionTecho.y() * 0.5f);
+	techoBaseMesh->setZExtent(cfg.dimensionTecho.z());
+	auto *techoMaterial = new Qt3DExtras::QPhongMaterial();
+	techoMaterial->setDiffuse(cfg.colorTecho);
+	auto *techoTransform = new Qt3DCore::QTransform();
+	techoTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y() + cfg.dimensionTecho.y()*0.25f, 0));
+	auto *techoEntity = new Qt3DCore::QEntity(casaGroup);
+	techoEntity->addComponent(techoBaseMesh);
+	techoEntity->addComponent(techoMaterial);
+	techoEntity->addComponent(techoTransform);
+	
+	// Techo superior
+	auto *techoTopMesh = new Qt3DExtras::QCuboidMesh();
+	techoTopMesh->setXExtent(cfg.dimensionTecho.x() * 0.7f);
+	techoTopMesh->setYExtent(cfg.dimensionTecho.y() * 0.5f);
+	techoTopMesh->setZExtent(cfg.dimensionTecho.z() * 0.7f);
+	auto *techoTopTransform = new Qt3DCore::QTransform();
+	techoTopTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y() + cfg.dimensionTecho.y()*0.75f, 0));
+	auto *techoTopEntity = new Qt3DCore::QEntity(casaGroup);
+	techoTopEntity->addComponent(techoTopMesh);
+	techoTopEntity->addComponent(techoMaterial);
+	techoTopEntity->addComponent(techoTopTransform);
+	
+	// Puerta
+	auto *puertaMesh = new Qt3DExtras::QCuboidMesh();
+	puertaMesh->setXExtent(0.8f);
+	puertaMesh->setYExtent(1.2f);
+	puertaMesh->setZExtent(0.1f);
+	auto *puertaMaterial = new Qt3DExtras::QPhongMaterial();
+	puertaMaterial->setDiffuse(cfg.colorPuerta);
+	auto *puertaTransform = new Qt3DCore::QTransform();
+	puertaTransform->setTranslation(QVector3D(0, 0.6f, cfg.dimensionBase.z()/2 + 0.05f));
+	auto *puertaEntity = new Qt3DCore::QEntity(casaGroup);
+	puertaEntity->addComponent(puertaMesh);
+	puertaEntity->addComponent(puertaMaterial);
+	puertaEntity->addComponent(puertaTransform);
+	
+	// Ventanas
+	auto *ventanaMaterial = new Qt3DExtras::QPhongMaterial();
+	ventanaMaterial->setDiffuse(cfg.colorVentana);
+	QVector<QVector3D> ventanasPos = { QVector3D(-1.2f, 1.0f, cfg.dimensionBase.z()/2 + 0.05f),
+		QVector3D( 1.2f, 1.0f, cfg.dimensionBase.z()/2 + 0.05f),
+		QVector3D(-1.2f, 1.0f, -cfg.dimensionBase.z()/2 - 0.05f),
+		QVector3D( 1.2f, 1.0f, -cfg.dimensionBase.z()/2 - 0.05f) };
+	for (const QVector3D &pos : ventanasPos) {
+		auto *ventanaMesh = new Qt3DExtras::QCuboidMesh();
+		ventanaMesh->setXExtent(0.8f);
+		ventanaMesh->setYExtent(0.8f);
+		ventanaMesh->setZExtent(0.05f);
+		auto *ventanaTransform = new Qt3DCore::QTransform();
+		ventanaTransform->setTranslation(pos);
+		auto *ventanaEntity = new Qt3DCore::QEntity(casaGroup);
+		ventanaEntity->addComponent(ventanaMesh);
+		ventanaEntity->addComponent(ventanaMaterial);
+		ventanaEntity->addComponent(ventanaTransform);
+	}
+}
+
+void Vista3D::crearCentral()
+{
+	ConfigCentral cfg;
+	auto *centralGroup = new Qt3DCore::QEntity(m_rootEntity);
+	auto *posTransform = new Qt3DCore::QTransform();
+	posTransform->setTranslation(cfg.posicion);
+	centralGroup->addComponent(posTransform);
+	
+	// Base
+	auto *baseMesh = new Qt3DExtras::QCuboidMesh();
+	baseMesh->setXExtent(cfg.dimensionBase.x());
+	baseMesh->setYExtent(cfg.dimensionBase.y());
+	baseMesh->setZExtent(cfg.dimensionBase.z());
+	auto *baseMaterial = new Qt3DExtras::QPhongMaterial();
+	baseMaterial->setDiffuse(cfg.colorPared);
+	auto *baseTransform = new Qt3DCore::QTransform();
+	baseTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y()/2, 0));
+	auto *baseEntity = new Qt3DCore::QEntity(centralGroup);
+	baseEntity->addComponent(baseMesh);
+	baseEntity->addComponent(baseMaterial);
+	baseEntity->addComponent(baseTransform);
+	
+	// Techo
+	auto *techoMesh = new Qt3DExtras::QCuboidMesh();
+	techoMesh->setXExtent(cfg.dimensionTecho.x());
+	techoMesh->setYExtent(cfg.dimensionTecho.y());
+	techoMesh->setZExtent(cfg.dimensionTecho.z());
+	auto *techoMaterial = new Qt3DExtras::QPhongMaterial();
+	techoMaterial->setDiffuse(cfg.colorTecho);
+	auto *techoTransform = new Qt3DCore::QTransform();
+	techoTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y() + cfg.dimensionTecho.y()/2, 0));
+	auto *techoEntity = new Qt3DCore::QEntity(centralGroup);
+	techoEntity->addComponent(techoMesh);
+	techoEntity->addComponent(techoMaterial);
+	techoEntity->addComponent(techoTransform);
+	
+	// Antena
+	auto *antenaMesh = new Qt3DExtras::QCylinderMesh();
+	antenaMesh->setRadius(cfg.radioAntena);
+	antenaMesh->setLength(cfg.alturaAntena);
+	auto *antenaMaterial = new Qt3DExtras::QPhongMaterial();
+	antenaMaterial->setDiffuse(QColor(192,192,192));
+	auto *antenaTransform = new Qt3DCore::QTransform();
+	antenaTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y() + cfg.dimensionTecho.y() + cfg.alturaAntena/2, 0));
+	auto *antenaEntity = new Qt3DCore::QEntity(centralGroup);
+	antenaEntity->addComponent(antenaMesh);
+	antenaEntity->addComponent(antenaMaterial);
+	antenaEntity->addComponent(antenaTransform);
+	
+	// Esfera en la punta (QSphereMesh ahora estÃ¡ incluido)
+	auto *esferaMesh = new Qt3DExtras::QSphereMesh();
+	esferaMesh->setRadius(0.2f);
+	auto *esferaMaterial = new Qt3DExtras::QPhongMaterial();
+	esferaMaterial->setDiffuse(QColor(255,215,0));
+	auto *esferaTransform = new Qt3DCore::QTransform();
+	esferaTransform->setTranslation(QVector3D(0, cfg.dimensionBase.y() + cfg.dimensionTecho.y() + cfg.alturaAntena, 0));
+	auto *esferaEntity = new Qt3DCore::QEntity(centralGroup);
+	esferaEntity->addComponent(esferaMesh);
+	esferaEntity->addComponent(esferaMaterial);
+	esferaEntity->addComponent(esferaTransform);
+}
+
+Qt3DCore::QEntity* Vista3D::crearCilindroEntrePuntos(const QVector3D &p1, const QVector3D &p2,
+													 float radio, const QColor &color,
+													 Qt3DCore::QEntity *parent)
+{
+	QVector3D direccion = p2 - p1;
+	float longitud = direccion.length();
+	if (longitud < 0.01f) return nullptr;
+	
+	QVector3D centro = (p1 + p2) / 2.0f;
+	QVector3D ejeY(0,1,0);
+	QQuaternion rotacion = QQuaternion::rotationTo(ejeY, direccion.normalized());
+	
+	auto *cableEntity = new Qt3DCore::QEntity(parent);
+	auto *mesh = new Qt3DExtras::QCylinderMesh();
+	mesh->setRadius(radio);
+	mesh->setLength(longitud);
+	auto *material = new Qt3DExtras::QPhongMaterial();
+	material->setDiffuse(color);
+	auto *transform = new Qt3DCore::QTransform();
+	transform->setTranslation(centro);
+	transform->setRotation(rotacion);
+	
+	cableEntity->addComponent(mesh);
+	cableEntity->addComponent(material);
+	cableEntity->addComponent(transform);
+	return cableEntity;
+}
+
+void Vista3D::crearCables()
+{
+	for (auto *cable : m_cables) {
+		delete cable;
+	}
+	m_cables.clear();
+	
+	ConfigCable cfgCable;
+	ConfigCentral cfgCentral;
+	QVector3D centralPos = cfgCentral.posicion;
+	float alturaConexionCentral = cfgCentral.dimensionBase.y() + cfgCentral.dimensionTecho.y();
+	QVector3D puntoCentral(centralPos.x(), centralPos.y() + alturaConexionCentral, centralPos.z());
+	
+	for (auto it = m_turbinasVisuales.begin(); it != m_turbinasVisuales.end(); ++it) {
+		Turbina3D *turbina = it.value();
+		QVector3D baseTurbina = turbina->getPosicionBase();
+		const ConfigTurbina3D &cfgTurb = Turbina3D::configGlobal;
+		float alturaConexion = cfgTurb.alturaPoste + cfgTurb.posicionGondola.y();
+		QVector3D puntoTurbina(baseTurbina.x(), baseTurbina.y() + alturaConexion, baseTurbina.z());
+		
+		Qt3DCore::QEntity *cable = crearCilindroEntrePuntos(puntoTurbina, puntoCentral,
+															cfgCable.radio, cfgCable.color,
+															m_rootEntity);
+		if (cable)
+			m_cables.append(cable);
+	}
+}
+
 void Vista3D::agregarTurbinaVisual(int id, const QVector3D &posicionBaseMundial)
 {
 	if (m_contenedoresTurbinas.contains(id)) return;
@@ -279,6 +531,7 @@ void Vista3D::agregarTurbinaVisual(int id, const QVector3D &posicionBaseMundial)
 	contenedor->addComponent(posTransform);
 	
 	Turbina3D *turbina = new Turbina3D(contenedor, id);
+	turbina->setPosicionBase(posicionBaseMundial);   // <-- ahora funciona
 	
 	m_contenedoresTurbinas[id] = contenedor;
 	m_turbinasVisuales[id] = turbina;
@@ -314,7 +567,6 @@ void Vista3D::actualizarTodasLasTurbinas()
 		++count;
 	}
 	
-	// Eliminar turbinas visuales que ya no existen en el modelo (o exceden el límite)
 	QList<int> idsToRemove;
 	for (int id : m_contenedoresTurbinas.keys()) {
 		if (!idsReales.contains(id)) {
@@ -324,4 +576,6 @@ void Vista3D::actualizarTodasLasTurbinas()
 	for (int id : idsToRemove) {
 		eliminarTurbinaVisual(id);
 	}
+	
+	crearCables();
 }
